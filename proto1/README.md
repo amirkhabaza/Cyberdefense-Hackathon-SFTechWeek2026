@@ -11,7 +11,6 @@ log files -> condense (errors/warnings + tail) -> Claude summary -> ElevenLabs T
 |---|---|
 | `log_speaker.py` | The CLI: load logs, summarize, speak |
 | `sample_logs/` | Small synthetic logs (a repeated `KeyError`, a Redis outage) for a quick demo |
-| `error_logs/`, `marco_logs/` | Real-world example logs to try it on |
 | `.env.example` | Keys and optional settings |
 
 ## Setup

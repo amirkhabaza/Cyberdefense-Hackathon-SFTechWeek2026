@@ -12,6 +12,14 @@ mic -> ElevenLabs agent --(client tool, in your browser)--> http://127.0.0.1:800
 
 The tools are *client tools*: they run in your browser, so the agent can reach `localhost` with no tunnel or ngrok.
 
+## Files
+| Path | What it is |
+|---|---|
+| `server.py` | FastAPI app: the `/api/*` endpoints, simulated incidents, audit log |
+| `create_agent.py` | Creates the ElevenLabs agent and its two client tools, saves `ELEVENLABS_AGENT_ID` to `.env` |
+| `static/index.html` | Browser page: starts the voice conversation, runs the client tools, prints summaries |
+| `audit.jsonl` | Created at runtime; one line per remediation or rejection (gitignored) |
+
 ## Setup
 ```bash
 pip install -r requirements.txt
@@ -19,6 +27,7 @@ cp .env.example .env            # add ELEVENLABS_API_KEY (and optionally change 
 python create_agent.py          # creates the agent + tools, saves ELEVENLABS_AGENT_ID to .env
 python server.py                # http://127.0.0.1:8000  (Swagger UI at /docs)
 ```
+Your ElevenLabs API key needs the **ElevenAgents (convai) Write** permission for `create_agent.py` to work.
 Open http://127.0.0.1:8000, click Start, and try: "What's going on?" then "Fix the checkout incident." then "Approve."
 
 ## API (all `/api/*` except health and session need header `X-API-Key`)
@@ -50,3 +59,13 @@ Safeguards: approval is enforced server-side (not just by the agent prompt), `dr
 `Idempotency-Key` makes retries safe, and every decision is appended to `audit.jsonl`.
 
 Note: the server hands the page its API key via `/api/session`. That is fine for a localhost demo, not for production.
+
+## Agent behavior
+The agent's prompt (in `create_agent.py`) tells it to list incidents on request, state the incident, action and risk, ask
+"Do you approve?", and call `remediate_incident` only after clear spoken approval, passing the user's exact words as
+`approval_transcript`. It can also call it with `dry_run` to explain a fix first. The server re-checks approval regardless.
+
+## Simulated data
+Three incidents are seeded in `server.py`: `inc-1001` (checkout KeyError, recommends rollback), `inc-1002` (worker cannot reach Redis,
+recommends reset connections) and `inc-1003` (slow orders queries, recommends clear cache). `POST /api/reset` re-opens them.
+State is in memory and resets when the server restarts.

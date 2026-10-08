@@ -1,0 +1,21 @@
+rules:
+  - id: scout.sql-injection.string-built-query
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL query is built with string formatting/concatenation, so user input can change the query.
+    patterns:
+      - pattern-either:
+          - pattern: $CUR.execute(f"...{...}...")
+          - pattern: $CUR.execute("..." + ...)
+          - pattern: $CUR.execute("..." % $X)
+          - pattern: $CUR.execute("...".format(...))
+          - pattern: $CUR.executemany(f"...{...}...", ...)
+    metadata:
+      category: sql-injection
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 Injection"
+      remediation: Parameterized query
+      fix: >-
+        Pass values separately from the SQL text, e.g. cursor.execute("SELECT * FROM users WHERE name = ?", (name,))
+        (use %s placeholders for psycopg2/MySQL drivers).

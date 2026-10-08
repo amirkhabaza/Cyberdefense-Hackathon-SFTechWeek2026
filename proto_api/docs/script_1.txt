@@ -1,0 +1,1 @@
+Then click Start and say “What’s going on?”, then “Fix the checkout incident”, then “Approve.”

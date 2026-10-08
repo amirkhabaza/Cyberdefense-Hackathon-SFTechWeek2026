@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Remediation</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#666; --card:#f5f5f7; --accent:#2b59ff; --ok:#12805c; --bad:#c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16161a; --fg:#eee; --muted:#9a9aa5; --card:#22222a; --accent:#6d8dff; --ok:#3ccf9b; --bad:#ff7a6b; } }
+  body { font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); max-width:760px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:1.4rem; } h2 { font-size:1rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:28px; }
+  button { font:inherit; padding:10px 18px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer; }
+  button.stop { background:var(--bad); } button:disabled { opacity:.5; cursor:default; }
+  .card { background:var(--card); border-radius:10px; padding:12px 14px; margin:8px 0; }
+  .muted { color:var(--muted); font-size:.9rem; } .ok { color:var(--ok); } .bad { color:var(--bad); }
+  .msg.agent b { color:var(--accent); } pre { white-space:pre-wrap; margin:0; font:inherit; }
+</style>
+</head>
+<body>
+<h1>Voice Remediation</h1>
+<p class="muted">Talk to the agent. It will only run a fix after you clearly say "approve" (or "yes, go ahead").</p>
+<button id="toggle">Start conversation</button> <span id="status" class="muted"></span>
+
+<h2>Incidents</h2><div id="incidents"></div>
+<h2>Remediation summary</h2><div id="summary" class="card muted">Nothing yet.</div>
+<h2>Conversation</h2><div id="log"></div>
+
+<script type="module">
+import { Conversation } from "https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm";
+
+let apiKey = "", conversation = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "X-API-Key": apiKey, "Content-Type": "application/json", ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body };
+}
+
+async function refreshIncidents() {
+  if (!apiKey) return;
+  const { body } = await api("/api/incidents");
+  $("incidents").innerHTML = (body.incidents || []).map(i =>
+    `<div class="card"><b>${esc(i.id)}</b> · ${esc(i.title)}<br>
+     <span class="muted">${esc(i.severity)} · ${esc(i.service)} · </span>
+     <span class="${i.status === "open" ? "bad" : "ok"}">${esc(i.status)}</span></div>`).join("");
+}
+
+function showSummary(r) {
+  $("summary").className = "card";
+  $("summary").innerHTML = `<b>${esc(r.id)}</b> · ${esc(r.incident_id)} · <span class="ok">${esc(r.status)}</span>
+    <pre>${esc(r.summary)}</pre>`;
+}
+
+function log(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  d.innerHTML = `<b>${role === "agent" ? "Agent" : "You"}:</b> ${esc(text)}`;
+  $("log").prepend(d);
+}
+
+const clientTools = {
+  // Lets the agent read what is open.
+  list_incidents: async () => {
+    const { body } = await api("/api/incidents?status=open");
+    return JSON.stringify(body);
+  },
+  // Called only after the user has verbally approved.
+  remediate_incident: async ({ incident_id, action, approval_transcript, dry_run }) => {
+    const { ok, status, body } = await api("/api/remediate", {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({
+        incident_id, action: action || null, dry_run: !!dry_run,
+        approved: !!approval_transcript,
+        approval: approval_transcript ? { transcript: approval_transcript, channel: "voice", approved_by: "voice-user",
+                                          conversation_id: conversation?.getId?.() } : null,
+      }),
+    });
+    if (!ok) {
+      const d = body.detail || {};
+      return JSON.stringify({ error: d.error || "request_failed", message: d.message || `HTTP ${status}` });
+    }
+    showSummary(body);
+    refreshIncidents();
+    return JSON.stringify({ status: body.status, summary: body.summary, spoken_summary: body.spoken_summary });
+  },
+};
+
+$("toggle").onclick = async () => {
+  if (conversation) { await conversation.endSession(); return; }
+  $("toggle").disabled = true; $("status").textContent = "Connecting…";
+  try {
+    const s = await fetch("/api/session").then(async r => { if (!r.ok) throw new Error((await r.json()).detail?.message); return r.json(); });
+    apiKey = s.api_key; refreshIncidents();
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    conversation = await Conversation.startSession({
+      signedUrl: s.signed_url,
+      clientTools,
+      onConnect: () => { $("status").textContent = "Listening…"; $("toggle").textContent = "End conversation"; $("toggle").className = "stop"; $("toggle").disabled = false; },
+      onDisconnect: () => { conversation = null; $("status").textContent = "Disconnected"; $("toggle").textContent = "Start conversation"; $("toggle").className = ""; $("toggle").disabled = false; },
+      onMessage: m => log(m.source === "ai" ? "agent" : "user", m.message),
+      onError: e => { $("status").textContent = "Error: " + (e.message || e); },
+    });
+  } catch (e) {
+    $("status").textContent = "Error: " + e.message; $("toggle").disabled = false;
+  }
+};
+</script>
+</body>
+</html>

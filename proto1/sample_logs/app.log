@@ -1,0 +1,8 @@
+2026-10-07 09:00:01 INFO  api  Server started on port 8080
+2026-10-07 09:02:13 INFO  api  GET /users 200 34ms
+2026-10-07 09:05:44 WARN  db   Slow query (1.8s): SELECT * FROM orders WHERE status='open'
+2026-10-07 09:07:02 ERROR api  Unhandled exception in /checkout: KeyError 'cart_id'
+2026-10-07 09:07:09 ERROR api  Unhandled exception in /checkout: KeyError 'cart_id'
+2026-10-07 09:07:30 ERROR api  Unhandled exception in /checkout: KeyError 'cart_id'
+2026-10-07 09:10:15 WARN  db   Slow query (2.4s): SELECT * FROM orders WHERE status='open'
+2026-10-07 09:12:00 INFO  api  GET /users 200 29ms

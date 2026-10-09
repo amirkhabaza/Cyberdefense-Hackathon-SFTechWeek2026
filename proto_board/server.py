@@ -36,9 +36,20 @@ def q(sql):
     return ch().query(sql).result_rows
 
 
+_run_id = None
+
+
 def log(step, status, detail=""):
-    ch().insert("remediation_log", [[datetime.now(timezone.utc), step, status, detail]],
-                column_names=["ts", "step", "status", "detail"])
+    """Step state goes to ClickHouse (queried for the dashboard); the full timeline goes to MongoDB."""
+    now = datetime.now(timezone.utc)
+    ch().insert("remediation_log", [[now, step, status, detail]], column_names=["ts", "step", "status", "detail"])
+    if _run_id:
+        try:
+            db.mongo().incidents.update_one(
+                {"_id": _run_id}, {"$push": {"timeline": {"ts": now, "step": step, "status": status, "detail": detail}}},
+                upsert=True)
+        except Exception:
+            pass  # the timeline is best-effort; ClickHouse remains the source of truth for dashboard state
 
 
 def step_states():
@@ -48,7 +59,12 @@ def step_states():
 
 # ---------- remediation runner ----------
 def run_remediation(approved_by, transcript):
+    global _run_id
     try:
+        _run_id = datetime.now(timezone.utc).strftime("inc-%Y%m%d-%H%M%S")
+        db.mongo().incidents.insert_one({"_id": _run_id, "created": datetime.now(timezone.utc), "type": "sql_injection",
+                                         "path": db.TARGET_PATH, "approved_by": approved_by, "transcript": transcript,
+                                         "timeline": []})
         log("approval", "done", f"{approved_by}: {transcript}")
 
         log("block_sources", "running")
@@ -79,6 +95,11 @@ def run_remediation(approved_by, transcript):
             [now, "192.0.2.77", "GET", db.TARGET_PATH, patched_replay, 1, 1,
              "sql_injection_replay", "replay-union-select", 0.99],
         ], column_names=db.COLUMNS)
+        db.mongo().logs.insert_many([
+            {"ts": now, "src_ip": "replay", "method": "GET", "path": db.TARGET_PATH, "query": db.SQLI_PAYLOADS[0],
+             "status": st, "user_agent": "aegis-replay", "is_malicious": True, "sample_rate": 1, "attack_type": "sql_injection_replay",
+             "raw": f'replay - - "GET {db.TARGET_PATH}?{db.SQLI_PAYLOADS[0]} HTTP/1.1" {st}'}
+            for st in (blocked_replay, patched_replay)])
         ok = blocked_replay >= 400 and patched_replay >= 400
         detail = f"Exploit replay: known attacker -> {blocked_replay}, fresh source -> {patched_replay}"
         log("replay_exploit", "done" if ok else "failed", detail)
@@ -126,6 +147,14 @@ def state():
     except Exception as e:
         raise HTTPException(502, f"ClickHouse query failed: {str(e)[:300]}")
 
+    try:
+        evidence = [{"ts": d["ts"].strftime("%H:%M:%S"), "status": d["status"], "raw": d["raw"], "ua": d["user_agent"]}
+                    for d in db.mongo().logs.find({"is_malicious": True}, {"ts": 1, "status": 1, "raw": 1, "user_agent": 1})
+                    .sort("ts", -1).limit(8)]
+        evidence_error = None
+    except Exception as e:
+        evidence, evidence_error = [], str(e)[:200]
+
     rps, mal_rps, active_rps = float(rps or 0), float(mal_rps or 0), float(active_rps or 0)
     conf = float(conf or 0)
     active_pct = active_rps / rps if rps else 0
@@ -170,6 +199,7 @@ def state():
         "malicious_pct": mal_rps / rps if rps else 0, "severity": severity, "confidence": conf,
         "defcon": defcon, "series": series, "attack_path": path, "narration": line,
         "phase": phase, "plan": plan, "verification": verify,
+        "evidence": evidence, "evidence_error": evidence_error,
         "can_approve": phase == "idle" and active_rps > 0,
     }
 
@@ -204,7 +234,8 @@ def reset():
 @app.get("/api/health")
 def health():
     try:
-        return {"status": "ok", "clickhouse": ch().command("SELECT version()")}
+        return {"status": "ok", "clickhouse": ch().command("SELECT version()"),
+                "mongodb_logs": db.mongo().logs.estimated_document_count()}
     except Exception as e:
         raise HTTPException(503, str(e)[:300])
 

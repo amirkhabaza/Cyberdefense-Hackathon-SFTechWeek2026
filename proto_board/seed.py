@@ -34,26 +34,38 @@ def main():
     client = db.connect(create_db=True)
     for ddl in db.SCHEMA:
         client.command(ddl)
+    mdb = db.mongo()
+    db.ensure_mongo_indexes(mdb)
 
     if args.reset:
         client.command("TRUNCATE TABLE remediation_log")
         client.command("TRUNCATE TABLE blocked_ips")
-        print("Reset remediation state and blocked IPs.")
+        db.mongo().incidents.delete_many({})
+        print("Reset remediation state, blocked IPs, and incident timelines.")
         if not args.live:
             return
 
-    if client.query("SELECT count() FROM traffic_events").result_rows[0][0] == 0:
+    need_ch = client.query("SELECT count() FROM traffic_events").result_rows[0][0] == 0
+    need_mongo = mdb.logs.estimated_document_count() == 0
+    if need_ch or need_mongo:
         end, start = now_s(), now_s() - timedelta(minutes=args.minutes)
         attack_from = end - timedelta(minutes=5)
-        rows, t = [], start
+        rows, docs, t = [], [], start
         while t < end:
-            rows += db.traffic_rows(t, set(), False, attack=t >= attack_from)
+            attack = t >= attack_from
+            rows += db.traffic_rows(t, set(), False, attack=attack)
+            docs += db.log_docs(t, set(), False, attack=attack)
             t += timedelta(seconds=1)
-        for i in range(0, len(rows), 20000):
-            client.insert("traffic_events", rows[i:i + 20000], column_names=db.COLUMNS)
-        print(f"Backfilled {len(rows)} rows ({args.minutes} min).")
+        if need_ch:
+            for i in range(0, len(rows), 20000):
+                client.insert("traffic_events", rows[i:i + 20000], column_names=db.COLUMNS)
+            print(f"ClickHouse: backfilled {len(rows)} aggregate rows ({args.minutes} min).")
+        if need_mongo:
+            for i in range(0, len(docs), 5000):
+                mdb.logs.insert_many(docs[i:i + 5000], ordered=False)
+            print(f"MongoDB: backfilled {len(docs)} raw log documents.")
     else:
-        print("traffic_events already has data; skipping backfill.")
+        print("Both stores already have data; skipping backfill.")
 
     if args.live:
         print("Generating live traffic. Ctrl+C to stop.")
@@ -62,13 +74,15 @@ def main():
             time.sleep(1)
             cur = now_s()
             blocked, patched = state(client)
-            rows = []
+            rows, docs = [], []
             t = last + timedelta(seconds=1)
             while t <= cur:
                 rows += db.traffic_rows(t, blocked, patched)
+                docs += db.log_docs(t, blocked, patched)
                 t += timedelta(seconds=1)
             if rows:
                 client.insert("traffic_events", rows, column_names=db.COLUMNS)
+                mdb.logs.insert_many(docs, ordered=False)
             last = cur
 
 

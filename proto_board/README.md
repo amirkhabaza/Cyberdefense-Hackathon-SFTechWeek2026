@@ -1,20 +1,23 @@
-# proto_board: Project Aegis dashboard (ClickHouse Cloud)
+# proto_board: Project Aegis dashboard (ClickHouse Cloud + MongoDB)
 
 A live security dashboard: traffic, attack path, a voice-approved remediation "autopilot", and verification.
-Every number on screen is a query against ClickHouse Cloud. The attack and the remediation are simulated.
+Two databases, two jobs. **ClickHouse Cloud** holds aggregated traffic and powers every number and chart. **MongoDB** holds the
+raw log documents (full request line, payload, user agent) and each incident's remediation timeline. The attack and the remediation are simulated.
 
 ```
-seed.py --live --> ClickHouse Cloud <-- server.py (FastAPI) <-- index.html (polls /api/state every 2s)
- (synthetic traffic,   traffic_events                 |             voice: "approve" -> POST /api/remediation/approve
-  honors blocks/patch) remediation_log, blocked_ips   +-- runs remediation steps, logging each to ClickHouse
+seed.py --live --+--> ClickHouse Cloud (traffic_events, remediation_log, blocked_ips) --+
+ (synthetic       |                                                                      v
+  traffic)        +--> MongoDB (logs, incidents) -------------------> server.py (FastAPI) <-- index.html (polls every 2s)
+                                                                       voice: "approve" -> POST /api/remediation/approve
 ```
 
 ## Setup
-1. In ClickHouse Cloud, open your service -> **Connect** -> HTTPS, and note host, user, password.
-2. Run:
+1. MongoDB Atlas (free M0 works): create a cluster, add a database user, allow your IP, then Connect -> Drivers and copy the connection string into `MONGODB_URI`.
+2. In ClickHouse Cloud, open your service -> **Connect** -> HTTPS, and note host, user, password.
+3. Run:
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env                  # fill in CLICKHOUSE_HOST and CLICKHOUSE_PASSWORD
+cp .env.example .env                  # fill in CLICKHOUSE_* and MONGODB_URI
 .venv/bin/python seed.py --live       # terminal 1: schema, 30 min backfill, then live traffic
 .venv/bin/python server.py            # terminal 2: http://127.0.0.1:8100
 ```
@@ -31,7 +34,11 @@ Click **Approve**, or click **Enable voice** (Chrome) and say "approve". Use **R
 - **Verification:** Patch, Tests (simulated), Replay (real status codes from the simulation), Health (legit-traffic success
   rate from ClickHouse).
 
-## Tables
+## Where data lives
+**MongoDB** (`aegis` database): `logs` (sampled raw access-log documents, 1-day TTL index; the **Evidence** panel reads the latest malicious ones) and
+`incidents` (one document per remediation run, with the approving transcript and a timeline of steps).
+
+**ClickHouse** tables:
 `traffic_events` (aggregated requests per second/source/path, MergeTree, 1-day TTL), `remediation_log` (step events),
 `blocked_ips` (ReplacingMergeTree).
 

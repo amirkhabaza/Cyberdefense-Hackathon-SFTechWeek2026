@@ -43,6 +43,8 @@
   .verify { display:flex; justify-content:space-around; gap:10px; flex-wrap:wrap; }
   .v { text-align:center; min-width:90px; } .v .ico { font-size:1.4rem; display:block; width:auto; }
   .detail { font-size:.8rem; color:var(--muted); }
+  .mono { font:12px/1.6 ui-monospace,Menlo,monospace; overflow-x:auto; }
+  .mono div { white-space:nowrap; } .s200 { color:var(--red); } .s4 { color:var(--green); }
   .banner { background:#2a1c10; border:1px solid var(--amber); color:var(--amber); padding:8px 12px; border-radius:8px; display:none; }
 </style>
 </head>
@@ -84,6 +86,11 @@
       <span class="listen muted" id="listen"></span>
     </div>
     <div class="detail" id="heard" style="margin-top:8px"></div>
+  </section>
+
+  <section class="panel">
+    <h2>EVIDENCE · RAW LOGS (MONGODB)</h2>
+    <div id="evidence" class="mono"></div>
   </section>
 
   <section class="panel">
@@ -143,6 +150,10 @@ function render(s) {
     const d = el("div", "v " + x.status); d.append(el("span", "ico", ICON[x.status]), el("div", null, x.label), el("div", "detail", x.detail));
     v.appendChild(d);
   }
+  const ev = $("evidence"); ev.replaceChildren();
+  if (s.evidence_error) ev.appendChild(el("div", "detail", "MongoDB unavailable: " + s.evidence_error));
+  for (const e of s.evidence) ev.appendChild(el("div", e.status < 400 ? "s200" : "s4", e.raw));
+  if (!s.evidence_error && !s.evidence.length) ev.appendChild(el("div", "detail", "No malicious log documents yet."));
   narrate(s);
 }
 

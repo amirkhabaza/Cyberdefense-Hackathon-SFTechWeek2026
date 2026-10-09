@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 
 import clickhouse_connect
+from pymongo import ASCENDING, DESCENDING, MongoClient
 
 HERE = Path(__file__).parent
 
@@ -31,6 +32,27 @@ def connect(create_db=False):
     if create_db:
         clickhouse_connect.get_client(**kw).command(f"CREATE DATABASE IF NOT EXISTS {database}")
     return clickhouse_connect.get_client(database=database, **kw)
+
+
+_mongo = None
+
+
+def mongo():
+    """MongoDB database holding raw log documents and incident timelines (client is thread-safe)."""
+    global _mongo
+    load_env()
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        raise RuntimeError("Set MONGODB_URI in .env (see .env.example).")
+    if _mongo is None:
+        _mongo = MongoClient(uri, serverSelectionTimeoutMS=8000)
+    return _mongo[os.environ.get("MONGODB_DB", "aegis")]
+
+
+def ensure_mongo_indexes(mdb):
+    mdb.logs.create_index([("ts", DESCENDING)])
+    mdb.logs.create_index([("is_malicious", ASCENDING), ("ts", DESCENDING)])
+    mdb.logs.create_index("ts", expireAfterSeconds=86400, name="ts_ttl")  # keep one day of raw logs
 
 
 SCHEMA = [
@@ -76,3 +98,38 @@ def traffic_rows(ts, blocked_ips, patched, attack=True):
                          int(random.uniform(450, 650)), 1, "sql_injection", "sqli-union-select",
                          round(random.uniform(0.95, 0.99), 3)])
     return rows
+
+
+SQLI_PAYLOADS = [
+    "q=' UNION SELECT username,password FROM customers--",
+    "q=1' OR '1'='1",
+    "q='; SELECT * FROM customers WHERE 'a'='a",
+    "q=' UNION SELECT card_number,cvv FROM payments--",
+]
+USER_AGENTS = ["Mozilla/5.0 (X11; Linux x86_64)", "sqlmap/1.7.2#stable (https://sqlmap.org)", "python-requests/2.31.0"]
+BENIGN_QUERIES = {"/api/products": "page=2", "/api/users/me": "", "/api/login": "", "/api/cart": "", "/health": "",
+                  "/static/app.js": "v=41"}
+
+
+def log_docs(ts, blocked_ips, patched, attack=True):
+    """Sampled raw log documents for one second (what an access-log collector would store in MongoDB)."""
+    docs = []
+
+    def doc(ip, method, path, query, status, ua, malicious, rate, **extra):
+        target = f"{path}?{query}" if query else path
+        return {
+            "ts": ts, "src_ip": ip, "method": method, "path": path, "query": query, "status": status,
+            "user_agent": ua, "is_malicious": bool(malicious), "sample_rate": rate,
+            "raw": f'{ip} - - [{ts:%d/%b/%Y:%H:%M:%S +0000}] "{method} {target} HTTP/1.1" {status} 512 "{ua}"',
+            **extra,
+        }
+
+    for method, path, _ in random.sample(BENIGN_PATHS, 3):
+        docs.append(doc(f"198.51.100.{random.randint(1, 250)}", method, path, BENIGN_QUERIES[path], 200,
+                        USER_AGENTS[0], False, 500))
+    if attack:
+        for ip in ATTACKERS:
+            docs.append(doc(ip, "GET", TARGET_PATH, random.choice(SQLI_PAYLOADS), respond(ip in blocked_ips, patched),
+                            random.choice(USER_AGENTS[1:]), True, 500, attack_type="sql_injection",
+                            rule="sqli-union-select", confidence=round(random.uniform(0.95, 0.99), 3)))
+    return docs

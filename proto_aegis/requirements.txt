@@ -1,0 +1,6 @@
+requests>=2.31
+clickhouse-connect>=0.8
+pymongo>=4.7
+dnspython>=2.4
+# optional, only for --voice-approval (microphone):
+# sounddevice>=0.4

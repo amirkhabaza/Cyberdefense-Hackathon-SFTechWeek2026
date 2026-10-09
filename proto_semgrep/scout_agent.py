@@ -77,7 +77,7 @@ class ScoutAgent:
         if category == "hardcoded-secret":
             snippet = mask_secret(snippet)
         return Finding(
-            rule_id=r["check_id"].split(".", 1)[-1] if r["check_id"].startswith("scout") else r["check_id"],
+            rule_id=r["check_id"][r["check_id"].find("scout."):] if "scout." in r["check_id"] else r["check_id"],
             category=category,
             severity=r["extra"]["severity"],
             file=os.path.relpath(r["path"]),

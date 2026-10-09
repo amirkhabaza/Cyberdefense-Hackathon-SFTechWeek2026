@@ -1,0 +1,12 @@
+[
+  {"id": "pb-sqli-001", "title": "SQL injection: parameterize queries", "kind": "playbook",
+   "text": "SQL injection in a search or lookup endpoint. Never build SQL with f-strings, concatenation, % or .format(). Use DB-API placeholders and pass values separately: cursor.execute('SELECT * FROM users WHERE name = ?', (name,)) for sqlite, %s for psycopg2 and MySQL. Verify by replaying UNION SELECT and OR 1=1 payloads and re-running static analysis."},
+  {"id": "pb-secret-002", "title": "Hard-coded secrets: migrate to environment", "kind": "playbook",
+   "text": "Hard-coded passwords, API keys and cloud access keys in source. Replace literals with os.environ[NAME], load values from a secrets manager at deploy time, and rotate every exposed secret because it already lives in git history. Add secret scanning to CI."},
+  {"id": "inc-2025-0412", "title": "Past incident: UNION SELECT against /api/search", "kind": "incident",
+   "text": "Active SQL injection (UNION SELECT) against a search endpoint exfiltrated customer rows. Contained by blocking attacker IPs at the gateway, then shipping a parameterized-query patch, then replaying the exploit. Rolling back the deploy was not needed. Rotate database credentials afterward."},
+  {"id": "pb-waf-003", "title": "Gateway containment: block sources and rate limit", "kind": "playbook",
+   "text": "While a code fix is prepared, block attacking source IPs at the API gateway and apply a rate limit to the affected path. This stops active exploitation without code changes and is reversible."},
+  {"id": "inc-2025-0307", "title": "Past incident: Redis connection refused in workers", "kind": "incident",
+   "text": "Background workers failed with connection refused to redis:6379. Fixed by resetting connections and restoring Redis. Unrelated to injection attacks."}
+]

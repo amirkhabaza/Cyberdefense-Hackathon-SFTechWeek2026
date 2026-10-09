@@ -4,3 +4,4 @@ pymongo>=4.7
 dnspython>=2.4
 # optional, only for --voice-approval (microphone):
 # sounddevice>=0.4
+# numpy>=1.26

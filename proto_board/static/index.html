@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Aegis</title>
+<style>
+  :root { --bg:#0b0f17; --panel:#121927; --line:#1f2a3d; --fg:#e6ebf5; --muted:#7f8da8;
+          --red:#ff4d5e; --amber:#ffb020; --green:#2ee6a6; --blue:#5b8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 ui-sans-serif,system-ui,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:14px; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:6px 2px; }
+  h1 { font-size:1.15rem; letter-spacing:.14em; margin:0; }
+  .defcon { font-weight:700; letter-spacing:.1em; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; background:var(--muted); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .panel h2 { margin:0 0 12px; font-size:.75rem; letter-spacing:.14em; color:var(--muted); font-weight:600; }
+  .big { font-size:2rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .bars { display:flex; align-items:flex-end; gap:2px; height:84px; margin:10px 0; }
+  .bars div { flex:1; background:var(--blue); border-radius:2px 2px 0 0; position:relative; min-height:1px; }
+  .bars div i { position:absolute; bottom:0; left:0; right:0; background:var(--red); border-radius:2px 2px 0 0; }
+  .row { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .muted { color:var(--muted); }
+  .sev { font-weight:700; letter-spacing:.06em; }
+  .flow { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .node { width:100%; max-width:260px; text-align:center; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#0e1522; }
+  .node.hot { border-color:var(--red); color:var(--red); animation:pulse 1.4s infinite; }
+  .node.safe { border-color:var(--green); color:var(--green); }
+  .arrow { color:var(--muted); line-height:1; }
+  @keyframes pulse { 50% { box-shadow:0 0 14px #ff4d5e66; } }
+  .say { font-size:1.1rem; padding:10px 12px; border-left:3px solid var(--blue); background:#0e1522; border-radius:6px; margin:4px 0 14px; }
+  .step { display:flex; align-items:center; gap:10px; padding:5px 0; }
+  .ico { width:20px; text-align:center; }
+  .pending { color:var(--muted); } .running { color:var(--amber); } .done { color:var(--green); } .failed { color:var(--red); }
+  .actions { display:flex; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap; }
+  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:#1a2438; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  .listen { margin-left:auto; letter-spacing:.12em; font-size:.8rem; }
+  .verify { display:flex; justify-content:space-around; gap:10px; flex-wrap:wrap; }
+  .v { text-align:center; min-width:90px; } .v .ico { font-size:1.4rem; display:block; width:auto; }
+  .detail { font-size:.8rem; color:var(--muted); }
+  .banner { background:#2a1c10; border:1px solid var(--amber); color:var(--amber); padding:8px 12px; border-radius:8px; display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🛡 PROJECT AEGIS</h1>
+    <div class="defcon"><span class="dot" id="defdot"></span><span id="defcon">DEFCON –</span></div>
+  </header>
+  <div class="banner" id="banner"></div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>LIVE TRAFFIC</h2>
+      <div class="big"><span id="rps">–</span><span class="muted" style="font-size:1rem"> req/s</span></div>
+      <div class="bars" id="bars"></div>
+      <div class="row"><span><b id="mal">–</b> <span class="muted">malicious</span></span><span class="muted" id="activeNote"></span></div>
+      <div style="margin-top:14px" class="row">
+        <div><div class="muted">Severity</div><div class="sev" id="sev">–</div></div>
+        <div><div class="muted">Confidence</div><div class="sev" id="conf">–</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>ATTACK PATH</h2>
+      <div class="flow" id="flow"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>AEGIS AUTOPILOT</h2>
+    <div class="say" id="say">Connecting…</div>
+    <div class="muted" style="margin-bottom:6px">Proposed remediation</div>
+    <div id="plan"></div>
+    <div class="actions">
+      <button class="primary" id="approve" disabled>Approve</button>
+      <button id="voice">🎙 Enable voice</button>
+      <button id="reset">Reset demo</button>
+      <span class="listen muted" id="listen"></span>
+    </div>
+    <div class="detail" id="heard" style="margin-top:8px"></div>
+  </section>
+
+  <section class="panel">
+    <h2>VERIFICATION</h2>
+    <div class="verify" id="verify"></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON = { pending: "○", running: "◔", done: "✔", failed: "✖" };
+const fmt = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : Math.round(n).toString();
+let last = null, spokenKey = "", listening = false;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+function render(s) {
+  last = s;
+  const color = { 2: "var(--red)", 3: "var(--amber)", 4: "var(--amber)", 5: "var(--green)" }[s.defcon];
+  $("defcon").textContent = "DEFCON " + s.defcon; $("defdot").style.background = color;
+  $("banner").style.display = s.live ? "none" : "block";
+  $("banner").textContent = s.live ? "" : "No live traffic in the last 10 seconds. Run: python seed.py --live";
+
+  $("rps").textContent = fmt(s.rps);
+  $("mal").textContent = fmt(s.malicious_rps) + "/s (" + Math.round(s.malicious_pct * 100) + "%)";
+  $("activeNote").textContent = s.active_exploit_rps > 0 ? "exploit succeeding: " + fmt(s.active_exploit_rps) + "/s" : "no successful exploits";
+  const max = Math.max(1, ...s.series.map(p => p.total));
+  const bars = $("bars"); bars.replaceChildren();
+  for (const p of s.series) {
+    const b = el("div"); b.style.height = (p.total / max * 100) + "%";
+    const i = el("i"); i.style.height = (p.malicious / Math.max(1, p.total) * 100) + "%"; b.appendChild(i); bars.appendChild(b);
+  }
+  const sevColor = { CRITICAL: "var(--red)", HIGH: "var(--red)", MEDIUM: "var(--amber)", LOW: "var(--green)" }[s.severity];
+  $("sev").textContent = ({ CRITICAL: "🔴 ", HIGH: "🟠 ", MEDIUM: "🟡 ", LOW: "🟢 " }[s.severity]) + s.severity; $("sev").style.color = sevColor;
+  $("conf").textContent = s.malicious_rps > 0 ? Math.round(s.confidence * 100) + "%" : "–";
+
+  const flow = $("flow"); flow.replaceChildren();
+  const ap = s.attack_path;
+  const cls = !ap ? "" : ap.contained ? "safe" : "hot";
+  const nodes = ap ? ["Internet", "API Gateway", ap.path, ap.attack_type === "sql_injection" ? "SQL Injection" : ap.attack_type, ap.asset] : ["Internet", "API Gateway", "No active attack path"];
+  nodes.forEach((n, i) => {
+    if (i) flow.appendChild(el("div", "arrow", "↓"));
+    flow.appendChild(el("div", "node " + (i >= 2 ? cls : ""), n));
+  });
+  if (ap) flow.appendChild(el("div", "detail", ap.sources + " sources · " + fmt(ap.requests_60s) + " requests/min" + (ap.contained ? " · contained" : "")));
+
+  $("say").textContent = "🎙 " + s.narration;
+  const plan = $("plan"); plan.replaceChildren();
+  for (const p of s.plan) {
+    const r = el("div", "step " + p.status); r.append(el("span", "ico", p.status === "pending" ? "☐" : ICON[p.status]), el("span", null, p.label));
+    if (p.detail) r.append(el("span", "detail", "· " + p.detail));
+    plan.appendChild(r);
+  }
+  $("approve").disabled = !s.can_approve;
+  const v = $("verify"); v.replaceChildren();
+  for (const x of s.verification) {
+    const d = el("div", "v " + x.status); d.append(el("span", "ico", ICON[x.status]), el("div", null, x.label), el("div", "detail", x.detail));
+    v.appendChild(d);
+  }
+  narrate(s);
+}
+
+function narrate(s) {
+  const key = s.phase + (s.can_approve ? ":attack" : "");
+  if (!listening || key === spokenKey || !(s.can_approve || s.phase === "complete")) return;
+  spokenKey = key;
+  speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(s.narration));
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state");
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    render(await r.json());
+  } catch (e) { $("say").textContent = "⚠ " + e.message; }
+}
+
+async function approve(transcript) {
+  const r = await fetch("/api/remediation/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                       body: JSON.stringify({ transcript }) });
+  if (!r.ok) $("heard").textContent = "Not run: " + ((await r.json()).detail || r.status);
+  poll();
+}
+
+$("approve").onclick = () => approve("approve (button)");
+$("reset").onclick = async () => { await fetch("/api/reset", { method: "POST" }); spokenKey = ""; poll(); };
+
+$("voice").onclick = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { $("heard").textContent = "Speech recognition isn't supported in this browser (try Chrome). Use the button."; return; }
+  const rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = "en-US";
+  rec.onresult = e => {
+    const text = e.results[e.results.length - 1][0].transcript.trim();
+    $("heard").textContent = "Heard: “" + text + "”";
+    if (last && last.can_approve && /\b(approve|go ahead|execute|do it)\b/i.test(text)) approve(text);
+  };
+  rec.onend = () => { if (listening) rec.start(); };
+  rec.onerror = e => { $("heard").textContent = "Mic error: " + e.error; };
+  listening = true; rec.start(); $("listen").textContent = "LISTENING… 🎤"; $("voice").disabled = true;
+  if (last) narrate(last);
+};
+
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>

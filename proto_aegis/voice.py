@@ -18,30 +18,39 @@ def is_approval(text):
     return bool(APPROVE.search(text)) and not NEGATE.search(text)
 
 
-def speak(text):
-    """Returns mode: 'live' if spoken through ElevenLabs, 'stub' if printed only."""
+def speak(text, play=True):
+    """Returns (mode, mp3_path). mode is 'live' if synthesized by ElevenLabs, else 'stub' with path None."""
     if not config.have("ELEVENLABS_API_KEY"):
-        return "stub"
+        return "stub", None
     try:
-        return _tts(text)
+        path = _tts(text, play)
+        return "live", path
     except requests.HTTPError as e:
         print(f"     (ElevenLabs TTS failed: {e.response.status_code} {e.response.text[:140]}; continuing without audio)")
-        return "stub"
+        return "stub", None
 
 
-def _tts(text):
+def _tts(text, play):
     voice = os.environ.get("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
     r = requests.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
                       headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "accept": "audio/mpeg"},
                       json={"text": text, "model_id": "eleven_multilingual_v2"}, timeout=120)
     r.raise_for_status()
-    out = Path(tempfile.gettempdir()) / "aegis_briefing.mp3"
+    out = Path(tempfile.gettempdir()) / f"aegis_briefing_{abs(hash(text)) % 10**8}.mp3"
     out.write_bytes(r.content)
-    if sys.platform == "darwin":
+    if play and sys.platform == "darwin":
         subprocess.run(["afplay", str(out)], check=False)
-    else:
-        print(f"     (audio saved to {out})")
-    return "live"
+    return out
+
+
+def transcribe(audio_bytes, content_type="audio/webm"):
+    """ElevenLabs speech-to-text for audio recorded in the browser."""
+    ext = "webm" if "webm" in content_type else "ogg" if "ogg" in content_type else "mp4" if "mp4" in content_type else "wav"
+    r = requests.post("https://api.elevenlabs.io/v1/speech-to-text",
+                      headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]}, data={"model_id": "scribe_v1"},
+                      files={"file": (f"reply.{ext}", audio_bytes, content_type)}, timeout=120)
+    r.raise_for_status()
+    return r.json().get("text", "").strip()
 
 
 def _listen(seconds=6):

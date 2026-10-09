@@ -14,12 +14,15 @@ FLOWS = {
 
 
 class Trace:
-    def __init__(self):
+    def __init__(self, listener=None):
         self.events = []
+        self.listener = listener  # called with each event (the dashboard uses this)
 
     def flow(self, n, mode, detail):
         name, src, dst = FLOWS[n]
         self.events.append({"flow": n, "name": name, "from": src, "to": dst, "mode": mode, "detail": detail, "t": time.time()})
+        if self.listener:
+            self.listener(self.events[-1])
         print(f"\n#{n} {name:<8} {src} -> {dst}   [{mode}]")
         for line in str(detail).splitlines():
             print(f"     {line}")

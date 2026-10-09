@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """Project Aegis dashboard backend. All dashboard numbers are ClickHouse Cloud queries."""
 import re
+import sys
 import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
+
+# The Aegis loop (proto_aegis/engine.py) runs inside this server so the dashboard, the Approve button and the
+# ElevenLabs voice reply all resolve the same pending approval.
+sys.path.insert(0, str(db.HERE.parent / "proto_aegis"))
+import engine as aegis_engine  # noqa: E402
+import voice as aegis_voice  # noqa: E402
+
+AEGIS = aegis_engine.Run()
 
 app = FastAPI(title="Project Aegis", version="1.0.0")
 _local = threading.local()
@@ -200,7 +209,8 @@ def state():
         "defcon": defcon, "series": series, "attack_path": path, "narration": line,
         "phase": phase, "plan": plan, "verification": verify,
         "evidence": evidence, "evidence_error": evidence_error,
-        "can_approve": phase == "idle" and active_rps > 0,
+        "attack_active": active_rps > 0,
+        "aegis": AEGIS.snapshot(),
     }
 
 
@@ -223,11 +233,68 @@ def approve(req: ApproveRequest):
     return {"status": "started"}
 
 
+def deploy_hook(transcript, source):
+    """Called by the engine once the operator approves: runs the dashboard's remediation steps (block, patch, replay, verify)."""
+    if not _run_lock.acquire(blocking=False):
+        return
+    try:
+        already = "approval" in step_states()
+    except Exception:
+        _run_lock.release()
+        raise
+    if already:
+        _run_lock.release()
+        return
+    run_remediation(f"aegis-{source}", transcript)  # releases _run_lock when finished
+
+
+class AegisApprove(BaseModel):
+    transcript: str = "approve"
+    source: str = "button"  # button | voice
+
+
+@app.post("/api/aegis/start")
+def aegis_start(demo_alert: bool = False):
+    if not AEGIS.start_async(demo_alert=demo_alert, on_approved=deploy_hook, play_audio=False):
+        raise HTTPException(409, f"Aegis is already {AEGIS.status}. Reset to run again.")
+    return {"status": "started"}
+
+
+@app.post("/api/aegis/approve")
+def aegis_approve(req: AegisApprove):
+    res = AEGIS.approve(req.transcript, req.source)
+    if not res["accepted"] and not res["unclear"]:
+        raise HTTPException(409, res.get("reason", "Not awaiting approval."))
+    return res
+
+
+@app.post("/api/aegis/voice")
+async def aegis_voice_reply(request: Request):
+    """Browser sends a recorded reply; ElevenLabs speech-to-text transcribes it; it resolves the same pending approval."""
+    audio = await request.body()
+    if not audio:
+        raise HTTPException(400, "Empty audio.")
+    try:
+        text = aegis_voice.transcribe(audio, request.headers.get("content-type", "audio/webm").split(";")[0])
+    except Exception as e:
+        raise HTTPException(502, f"Transcription failed: {str(e)[:200]}")
+    res = AEGIS.approve(text, "voice") if text else {"accepted": False, "approved": False, "unclear": True}
+    return {"text": text, **res}
+
+
+@app.get("/api/aegis/audio")
+def aegis_audio():
+    if not AEGIS.audio_path:
+        raise HTTPException(404, "No briefing audio.")
+    return FileResponse(AEGIS.audio_path, media_type="audio/mpeg")
+
+
 @app.post("/api/reset")
 def reset():
     """Clear remediation state and unblock sources so the demo can be replayed."""
     ch().command("TRUNCATE TABLE remediation_log")
     ch().command("TRUNCATE TABLE blocked_ips")
+    AEGIS.reset()
     return {"status": "reset"}
 
 

@@ -31,7 +31,7 @@
   .node.safe { border-color:var(--green); color:var(--green); }
   .arrow { color:var(--muted); line-height:1; }
   @keyframes pulse { 50% { box-shadow:0 0 14px #ff4d5e66; } }
-  .say { font-size:1.1rem; padding:10px 12px; border-left:3px solid var(--blue); background:#0e1522; border-radius:6px; margin:4px 0 14px; }
+  .say { overflow-wrap:anywhere; font-size:1.1rem; padding:10px 12px; border-left:3px solid var(--blue); background:#0e1522; border-radius:6px; margin:4px 0 14px; }
   .step { display:flex; align-items:center; gap:10px; padding:5px 0; }
   .ico { width:20px; text-align:center; }
   .pending { color:var(--muted); } .running { color:var(--amber); } .done { color:var(--green); } .failed { color:var(--red); }
@@ -45,6 +45,9 @@
   .detail { font-size:.8rem; color:var(--muted); }
   .mono { font:12px/1.6 ui-monospace,Menlo,monospace; overflow-x:auto; }
   .mono div { white-space:nowrap; } .s200 { color:var(--red); } .s4 { color:var(--green); }
+  .flow-row { display:grid; grid-template-columns:22px 150px 1fr; gap:8px; padding:4px 0; border-bottom:1px solid var(--line); align-items:start; }
+  .flow-row .fd { font-size:.85rem; color:var(--muted); white-space:pre-wrap; min-width:0; overflow-wrap:anywhere; }
+  .tag { font-size:.7rem; padding:1px 6px; border-radius:6px; background:#1a2438; color:var(--muted); margin-left:6px; }
   .banner { background:#2a1c10; border:1px solid var(--amber); color:var(--amber); padding:8px 12px; border-radius:8px; display:none; }
 </style>
 </head>
@@ -77,9 +80,12 @@
   <section class="panel">
     <h2>AEGIS AUTOPILOT</h2>
     <div class="say" id="say">Connecting…</div>
-    <div class="muted" style="margin-bottom:6px">Proposed remediation</div>
+    <div id="flows"></div>
+    <details id="diffbox" style="margin-top:10px"><summary class="muted">Proposed patch (diff)</summary><pre class="mono" id="diff"></pre></details>
+    <div class="muted" style="margin:12px 0 6px">Deployment steps after approval</div>
     <div id="plan"></div>
     <div class="actions">
+      <button class="primary" id="start">Start Aegis</button>
       <button class="primary" id="approve" disabled>Approve</button>
       <button id="voice">🎙 Enable voice</button>
       <button id="reset">Reset demo</button>
@@ -137,14 +143,13 @@ function render(s) {
   });
   if (ap) flow.appendChild(el("div", "detail", ap.sources + " sources · " + fmt(ap.requests_60s) + " requests/min" + (ap.contained ? " · contained" : "")));
 
-  $("say").textContent = "🎙 " + s.narration;
+  renderAegis(s.aegis);
   const plan = $("plan"); plan.replaceChildren();
   for (const p of s.plan) {
     const r = el("div", "step " + p.status); r.append(el("span", "ico", p.status === "pending" ? "☐" : ICON[p.status]), el("span", null, p.label));
     if (p.detail) r.append(el("span", "detail", "· " + p.detail));
     plan.appendChild(r);
   }
-  $("approve").disabled = !s.can_approve;
   const v = $("verify"); v.replaceChildren();
   for (const x of s.verification) {
     const d = el("div", "v " + x.status); d.append(el("span", "ico", ICON[x.status]), el("div", null, x.label), el("div", "detail", x.detail));
@@ -154,14 +159,81 @@ function render(s) {
   if (s.evidence_error) ev.appendChild(el("div", "detail", "MongoDB unavailable: " + s.evidence_error));
   for (const e of s.evidence) ev.appendChild(el("div", e.status < 400 ? "s200" : "s4", e.raw));
   if (!s.evidence_error && !s.evidence.length) ev.appendChild(el("div", "detail", "No malicious log documents yet."));
-  narrate(s);
 }
 
-function narrate(s) {
-  const key = s.phase + (s.can_approve ? ":attack" : "");
-  if (!listening || key === spokenKey || !(s.can_approve || s.phase === "complete")) return;
-  spokenKey = key;
-  speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(s.narration));
+let handledRun = -1, voiceOn = false, micStream = null, audioEl = null, recog = null;
+
+function renderAegis(a) {
+  const f = $("flows"); f.replaceChildren();
+  for (const x of a.flows) {
+    const row = el("div", "flow-row " + (x.state === "done" ? "done" : "pending"));
+    row.append(el("span", "ico", x.state === "done" ? "✔" : "○"));
+    const name = el("span", null, "#" + x.n + " " + x.name);
+    if (x.mode) name.appendChild(el("span", "tag", x.mode));
+    name.appendChild(el("div", "detail", x.from + " → " + x.to));
+    row.append(name, el("span", "fd", x.detail || ""));
+    f.appendChild(row);
+  }
+  $("diff").textContent = a.diff || "";
+  $("diffbox").style.display = a.diff ? "block" : "none";
+  const labels = { idle: "Press Start Aegis to begin the incident response.", running: "Aegis is investigating…",
+    awaiting_approval: a.briefing, deploying: "Approved. Deploying the fix…", complete: a.closing,
+    rejected: a.closing, failed: "⚠ " + a.error };
+  $("say").textContent = "🎙 " + (labels[a.status] || a.status);
+  $("start").disabled = a.status !== "idle";
+  $("approve").disabled = !a.awaiting_approval;
+  if (a.approval) $("heard").textContent = "Approval via " + a.approval.source + ": “" + a.approval.transcript + "”";
+  if (a.awaiting_approval && a.run_id !== handledRun) { handledRun = a.run_id; onAwaiting(a); }
+}
+
+function say(text) {  // fallback voice when ElevenLabs audio is unavailable
+  speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
+async function onAwaiting(a) {
+  if (!voiceOn) return;
+  if (a.audio_ready) {
+    audioEl = new Audio("/api/aegis/audio?" + a.run_id);
+    await new Promise(res => { audioEl.onended = res; audioEl.onerror = res; audioEl.play().catch(res); });
+    listenElevenLabs(3);
+  } else {
+    say(a.briefing);  // no ElevenLabs audio: browser voice in and out
+    listenBrowser();
+  }
+}
+
+async function listenElevenLabs(tries) {
+  for (let i = 0; i < tries && last && last.aegis.awaiting_approval; i++) {
+    $("listen").textContent = "LISTENING… 🎤";
+    const rec = new MediaRecorder(micStream); const chunks = [];
+    rec.ondataavailable = e => chunks.push(e.data);
+    const done = new Promise(r => rec.onstop = r);
+    rec.start(); await new Promise(r => setTimeout(r, 6000)); rec.stop(); await done;
+    $("listen").textContent = "TRANSCRIBING…";
+    const r = await fetch("/api/aegis/voice", { method: "POST", headers: { "Content-Type": rec.mimeType || "audio/webm" },
+                                                body: new Blob(chunks, { type: rec.mimeType }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { $("heard").textContent = "Voice error: " + (j.detail || r.status); break; }
+    $("heard").textContent = "Heard: “" + j.text + "”";
+    if (j.accepted) break;
+    $("heard").textContent += " (not clear; say approve or no)";
+  }
+  $("listen").textContent = ""; poll();
+}
+
+function listenBrowser() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { $("heard").textContent = "No speech recognition in this browser; use the Approve button."; return; }
+  recog = new SR(); recog.continuous = true; recog.lang = "en-US";
+  recog.onresult = async e => {
+    const text = e.results[e.results.length - 1][0].transcript.trim();
+    $("heard").textContent = "Heard: “" + text + "”";
+    const r = await fetch("/api/aegis/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({ transcript: text, source: "voice" }) });
+    if (r.ok) { const j = await r.json(); if (j.accepted) { recog.onend = null; recog.stop(); poll(); } }
+  };
+  recog.onend = () => { if (last && last.aegis.awaiting_approval) recog.start(); };
+  $("listen").textContent = "LISTENING… 🎤"; recog.start();
 }
 
 async function poll() {
@@ -172,29 +244,24 @@ async function poll() {
   } catch (e) { $("say").textContent = "⚠ " + e.message; }
 }
 
-async function approve(transcript) {
-  const r = await fetch("/api/remediation/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                       body: JSON.stringify({ transcript }) });
-  if (!r.ok) $("heard").textContent = "Not run: " + ((await r.json()).detail || r.status);
+$("start").onclick = async () => {
+  const r = await fetch("/api/aegis/start", { method: "POST" });
+  if (!r.ok) $("heard").textContent = "Could not start: " + ((await r.json()).detail || r.status);
   poll();
-}
-
-$("approve").onclick = () => approve("approve (button)");
-$("reset").onclick = async () => { await fetch("/api/reset", { method: "POST" }); spokenKey = ""; poll(); };
-
-$("voice").onclick = () => {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { $("heard").textContent = "Speech recognition isn't supported in this browser (try Chrome). Use the button."; return; }
-  const rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = "en-US";
-  rec.onresult = e => {
-    const text = e.results[e.results.length - 1][0].transcript.trim();
-    $("heard").textContent = "Heard: “" + text + "”";
-    if (last && last.can_approve && /\b(approve|go ahead|execute|do it)\b/i.test(text)) approve(text);
-  };
-  rec.onend = () => { if (listening) rec.start(); };
-  rec.onerror = e => { $("heard").textContent = "Mic error: " + e.error; };
-  listening = true; rec.start(); $("listen").textContent = "LISTENING… 🎤"; $("voice").disabled = true;
-  if (last) narrate(last);
+};
+$("approve").onclick = async () => {  // same pending approval the voice reply resolves
+  const r = await fetch("/api/aegis/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ transcript: "approve (button)", source: "button" }) });
+  if (!r.ok) $("heard").textContent = "Not accepted: " + ((await r.json()).detail || r.status);
+  if (recog) { recog.onend = null; recog.stop(); }
+  poll();
+};
+$("reset").onclick = async () => { await fetch("/api/reset", { method: "POST" }); handledRun = -1; $("heard").textContent = ""; poll(); };
+$("voice").onclick = async () => {
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { $("heard").textContent = "Microphone blocked: " + e.message; return; }
+  voiceOn = true; $("voice").disabled = true; $("voice").textContent = "🎙 Voice on";
+  $("heard").textContent = "Voice on: Aegis will speak its briefing, then listen for “approve”.";
+  if (last && last.aegis.awaiting_approval) { handledRun = last.aegis.run_id; onAwaiting(last.aegis); }
 };
 
 poll(); setInterval(poll, 2000);

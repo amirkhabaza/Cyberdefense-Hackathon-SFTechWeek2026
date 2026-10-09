@@ -143,7 +143,7 @@ class Run:
             (out / "fix.patch").write_text(diff)
             S(diff=diff, verification=verification)
             trace.flow(5, "live" if llm.live() else "stub",
-                       f"{patch['explanation']}\nverification: {verification}\ndiff saved to {out / 'fix.patch'}")
+                       f"{patch['explanation']}\nverification: {verification}\ndiff saved to proto_aegis/out/{out.name}/fix.patch")
             if remaining:
                 S(status="failed", error="Patch did not verify; not asking for approval.")
                 return

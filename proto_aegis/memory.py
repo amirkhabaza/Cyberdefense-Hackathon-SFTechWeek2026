@@ -9,10 +9,16 @@ import llm
 INDEX = "intel_vector"
 
 
+_client = None
+
+
 def _mongo_coll():
+    """One shared client: reconnecting per search is slower and more exposed to a single slow node."""
+    global _client
     from pymongo import MongoClient
-    c = MongoClient(os.environ["MONGODB_URI"], serverSelectionTimeoutMS=6000)
-    return c[os.environ.get("MONGODB_DB", "aegis")]["intel"]
+    if _client is None:
+        _client = MongoClient(os.environ["MONGODB_URI"], serverSelectionTimeoutMS=8000, connectTimeoutMS=5000)
+    return _client[os.environ.get("MONGODB_DB", "aegis")]["intel"]
 
 
 def load_playbooks():

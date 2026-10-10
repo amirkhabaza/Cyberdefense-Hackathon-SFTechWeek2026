@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Aegis</title>
+<title>Voice Approved Protector</title>
 <style>
   :root { --bg:#0b0f17; --panel:#121927; --line:#1f2a3d; --fg:#e6ebf5; --muted:#7f8da8;
           --red:#ff4d5e; --amber:#ffb020; --green:#2ee6a6; --blue:#5b8cff; }
@@ -15,7 +15,7 @@
   .defcon { font-weight:700; letter-spacing:.1em; }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; background:var(--muted); }
   .grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; }
-  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  @media (max-width:760px) { .grid { grid-template-columns:minmax(0,1fr); } }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
   .panel h2 { margin:0 0 12px; font-size:.75rem; letter-spacing:.14em; color:var(--muted); font-weight:600; }
   .big { font-size:2rem; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -54,7 +54,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>🛡 PROJECT AEGIS</h1>
+    <h1>🛡 PROJECT VOICE APPROVED PROTECTOR</h1>
     <div class="defcon"><span class="dot" id="defdot"></span><span id="defcon">DEFCON –</span></div>
   </header>
   <div class="banner" id="banner"></div>

@@ -4,7 +4,8 @@
 writes and verifies a patch, then briefs you out loud and waits for you to say **"approve"** before it deploys anything.
 
 > **Naming:** the project is called *Voice Approved Protector*. Its working name was *Aegis*, which is still what you will see in the
-> dashboard header and buttons, the screenshots, the `proto_aegis/` folder and the `aegis` database names.
+> **Start Aegis** button, the `proto_aegis/` folder and the `aegis` database names. The screenshots below were taken before the
+> dashboard header was renamed.
 
 ![Architecture](docs/images/architecture.png)
 

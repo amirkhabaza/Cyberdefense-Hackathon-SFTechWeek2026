@@ -1,7 +1,10 @@
-# Project AEGIS
+# VOICE APPROVED PROTECTOR
 
-**A voice-approved security copilot.** Aegis watches live traffic, spots an active attack, researches it, scans the vulnerable code,
+**A voice-approved security copilot.** The Protector watches live traffic, spots an active attack, researches it, scans the vulnerable code,
 writes and verifies a patch, then briefs you out loud and waits for you to say **"approve"** before it deploys anything.
+
+> **Naming:** the project is called *Voice Approved Protector*. Its working name was *Aegis*, which is still what you will see in the
+> dashboard header and buttons, the screenshots, the `proto_aegis/` folder and the `aegis` database names.
 
 ![Architecture](docs/images/architecture.png)
 
@@ -28,7 +31,7 @@ An LLM is the central reasoning engine. Four tools surround it, and every number
 | **2** | Query | The LLM turns the alert into a memory query | – | Receives query | – | Writes and embeds it | – |
 | **3** | Intel | Atlas Vector Search returns the closest playbooks and past incidents | – | Returns top matches | – | Receives context | – |
 | **4** | Scan | The LLM asks Semgrep to scan the vulnerable file | – | – | Scans, reports findings | Requests scan | – |
-| **5** | Patch | The LLM writes a patch; Semgrep re-scans it. If the re-scan is not clean, Aegis stops and never asks for approval | – | – | Verifies the patch | Writes patch | – |
+| **5** | Patch | The LLM writes a patch; Semgrep re-scans it. If the re-scan is not clean, the Protector stops and never asks for approval | – | – | Verifies the patch | Writes patch | – |
 | **6** | Voice | The LLM writes a short briefing; ElevenLabs speaks it | – | – | – | Writes briefing | Speaks it |
 | **7** | Approve | You say "approve" (or click **Approve**); only then is the fix deployed | – | – | – | Receives approval | Transcribes your reply |
 
@@ -48,7 +51,7 @@ Live traffic is flowing, about a quarter of it is a SQL injection attack, and th
 
 ![Incident detected](docs/images/01-incident-detected.png)
 
-### 2. Aegis has a fix and is waiting for you
+### 2. The Protector has a fix and is waiting for you
 All six steps up to the briefing are done. The **Approve** button is live, and the briefing is spoken if voice is on.
 
 ![Awaiting approval](docs/images/02-awaiting-approval.png)
@@ -74,15 +77,15 @@ Approval was given (here by voice), the sources are blocked, the exploit replay 
 | Button | What it does |
 |---|---|
 | **Start Aegis** | Starts the incident response (flows #1–#6). It does not run automatically, so it never spends LLM or voice calls unless you ask |
-| **Approve** | Approves the pending fix. Works any time Aegis is waiting |
-| **Enable voice** | Allows the microphone. Aegis then speaks its briefing and listens for your reply |
-| **Reset demo** | Re-opens the incident, unblocks the IPs and clears Aegis, so you can run it again |
+| **Approve** | Approves the pending fix. Works any time the Protector is waiting |
+| **Enable voice** | Allows the microphone. The Protector then speaks its briefing and listens for your reply |
+| **Reset demo** | Re-opens the incident, unblocks the IPs and clears the run, so you can run it again |
 
 ### Approving by voice
 1. Click **Enable voice** and allow the microphone.
 2. Click **Start Aegis**. When the briefing is ready, ElevenLabs reads it aloud.
-3. Aegis then listens for 6 seconds. Say **"approve"** (or "go ahead", "yes", "do it"), or say "no" / "cancel" to decline.
-4. ElevenLabs transcribes your reply and the server checks it. If it is unclear, Aegis listens again, up to three tries.
+3. The Protector then listens for 6 seconds. Say **"approve"** (or "go ahead", "yes", "do it"), or say "no" / "cancel" to decline.
+4. ElevenLabs transcribes your reply and the server checks it. If it is unclear, it listens again, up to three tries.
 
 The **Approve** button and your voice resolve the *same* pending approval, so it can only be approved once; a second attempt is refused.
 If ElevenLabs audio is not available (for example the account is out of credits), the page falls back to your browser's built-in speech for both talking and listening.
@@ -106,9 +109,9 @@ Each folder has its own README with details.
 
 ## Quick start
 
-**Prerequisites:** Python 3.13, accounts for ClickHouse Cloud and MongoDB Atlas (free tiers work). OpenAI and ElevenLabs keys are optional but needed to see Aegis fully live.
+**Prerequisites:** Python 3.13, accounts for ClickHouse Cloud and MongoDB Atlas (free tiers work). OpenAI and ElevenLabs keys are optional but needed to see it fully live.
 
-**1. Semgrep (used by Aegis)**
+**1. Semgrep (used by the Protector)**
 ```bash
 cd proto_semgrep
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -121,7 +124,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env     # fill in the ClickHouse and MongoDB settings
 ```
 
-**3. Aegis**
+**3. The incident loop (`proto_aegis`)**
 ```bash
 cd proto_aegis
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -149,14 +152,14 @@ for the Atlas vector index to become active.
 
 ## Configuration
 
-Every key is optional for Aegis. Anything missing falls back to a clearly labeled `stub`, so the flow always runs end to end.
+Every key is optional for the incident loop. Anything missing falls back to a clearly labeled `stub`, so the flow always runs end to end.
 
 | Variable | Used by | Without it |
 |---|---|---|
-| `CLICKHOUSE_HOST`, `CLICKHOUSE_PASSWORD` (+ `PORT`, `USER`, `DATABASE`) | dashboard, Aegis step #1 | Dashboard needs it. Aegis uses a canned alert |
-| `MONGODB_URI`, `MONGODB_DB` | dashboard (raw logs), Aegis steps #2–#3 | Aegis uses a local keyword search over the same playbooks |
-| `OPENAI_API_KEY` (+ `OPENAI_MODEL`, `OPENAI_EMBED_MODEL`) | Aegis reasoning and embeddings | Canned query, patch and text |
-| `ELEVENLABS_API_KEY` (+ `ELEVENLABS_VOICE_ID`) | Aegis voice in and out | Briefing is shown as text; browser speech is used for voice |
+| `CLICKHOUSE_HOST`, `CLICKHOUSE_PASSWORD` (+ `PORT`, `USER`, `DATABASE`) | dashboard, incident-loop step #1 | Dashboard needs it. The loop uses a canned alert |
+| `MONGODB_URI`, `MONGODB_DB` | dashboard (raw logs), incident-loop steps #2–#3 | The loop uses a local keyword search over the same playbooks |
+| `OPENAI_API_KEY` (+ `OPENAI_MODEL`, `OPENAI_EMBED_MODEL`) | Incident-loop reasoning and embeddings | Canned query, patch and text |
+| `ELEVENLABS_API_KEY` (+ `ELEVENLABS_VOICE_ID`) | Voice in and out | Briefing is shown as text; browser speech is used for voice |
 
 ### Where the data lives
 - **ClickHouse** (`aegis` database): `traffic_events` (aggregated requests per second, source and path), `remediation_log` (one row per remediation step), `blocked_ips`.
@@ -184,7 +187,7 @@ It prints each flow as `#N Name  From -> To  [live|stub]`. For the coordinated d
 | MongoDB timeout / `ReplicaSetNoPrimary` | Cluster still starting or paused, or your IP is not on the Atlas allowlist |
 | Dashboard banner: "No live traffic" | `seed.py --live` is not running |
 | `#3 Intel` says `stub` | The Atlas vector index is not active yet, or MongoDB was unreachable. The reason prints in the server log |
-| ElevenLabs `quota_exceeded` or `401` | Out of credits or a key without the needed permission; Aegis continues without audio |
+| ElevenLabs `quota_exceeded` or `401` | Out of credits or a key without the needed permission; it continues without audio |
 | `no such file: .venv/bin/python` | Run the command from inside the folder that owns the `.venv` |
 
 ---
